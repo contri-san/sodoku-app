@@ -1,0 +1,451 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>ナンプレアプリ</title>
+    <!-- Tailwind CSS -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <!-- React & ReactDOM -->
+    <script crossorigin src="https://unpkg.com/react@18/umd/react.development.js"></script>
+    <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.development.js"></script>
+    <!-- Babel (JSXを変換するため) -->
+    <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+    <!-- Lucide Icons -->
+    <script src="https://unpkg.com/lucide@latest"></script>
+</head>
+<body class="bg-gray-50">
+    <div id="root"></div>
+
+    <script type="text/babel" data-type="module">
+        // Reactの機能を使えるようにする
+        const { useState, useEffect, useCallback } = React;
+
+        // Lucideアイコンを使えるようにする準備
+        const createIcon = (iconName) => {
+            return ({ size = 24, className = '', ...props }) => {
+                const svgRef = React.useRef(null);
+                React.useEffect(() => {
+                    if (svgRef.current) {
+                        const tempDiv = document.createElement('div');
+                        lucide.createIcons({
+                             icons: { [iconName]: lucide.icons[iconName] },
+                             nameAttr: 'data-lucide',
+                             root: tempDiv
+                        });
+                        const svgElement = tempDiv.querySelector('svg');
+                        if(svgElement) {
+                            svgRef.current.innerHTML = svgElement.innerHTML;
+                             Array.from(svgElement.attributes).forEach(attr => {
+                                if(attr.name !== 'class' && attr.name !== 'width' && attr.name !== 'height') {
+                                    svgRef.current.setAttribute(attr.name, attr.value);
+                                }
+                            });
+                        }
+                    }
+                }, [size, className, props]);
+
+                return <svg ref={svgRef} width={size} height={size} className={className} {...props} xmlns="http://www.w3.org/2000/svg" />;
+            };
+        };
+
+        const RefreshCw = createIcon('RefreshCw');
+        const Eraser = createIcon('Eraser');
+        const Trophy = createIcon('Trophy');
+        const ExternalLink = createIcon('ExternalLink');
+        const Play = createIcon('Play');
+        const Pause = createIcon('Pause');
+
+        // --- 広告用コンポーネント ---
+        const AdBanner = () => {
+          return (
+            <div className="w-full mb-4 bg-gray-50 border border-dashed border-gray-300 rounded-lg p-2 text-center">
+              <span className="text-[10px] text-gray-400 block mb-1 leading-none">スポンサーリンク</span>
+              <div className="bg-white text-gray-400 h-12 max-w-[320px] mx-auto flex items-center justify-center rounded shadow-inner">
+                <div className="flex items-center space-x-1">
+                  <ExternalLink size={14} />
+                  <span className="text-xs">小型広告枠 (例: 320×50)</span>
+                </div>
+              </div>
+            </div>
+          );
+        };
+
+        // --- ナンプレ生成ロジック ---
+        const BASE_GRID = [
+          1, 2, 3, 4, 5, 6, 7, 8, 9,
+          4, 5, 6, 7, 8, 9, 1, 2, 3,
+          7, 8, 9, 1, 2, 3, 4, 5, 6,
+          2, 3, 1, 5, 6, 4, 8, 9, 7,
+          5, 6, 4, 8, 9, 7, 2, 3, 1,
+          8, 9, 7, 2, 3, 1, 5, 6, 4,
+          3, 1, 2, 6, 4, 5, 9, 7, 8,
+          6, 4, 5, 9, 7, 8, 3, 1, 2,
+          9, 7, 8, 3, 1, 2, 6, 4, 5
+        ];
+
+        function shuffleArray(array) {
+          const arr = [...array];
+          for (let i = arr.length - 1; i > 0; i--) {
+            const j = Math.floor(Math.random() * (i + 1));
+            [arr[i], arr[j]] = [arr[j], arr[i]];
+          }
+          return arr;
+        }
+
+        function generateSudoku(level) {
+          const digits = [0, ...shuffleArray([1, 2, 3, 4, 5, 6, 7, 8, 9])];
+          let board = BASE_GRID.map(val => digits[val]);
+
+          const bandOrder = shuffleArray([0, 1, 2]);
+          const rowOrders = [shuffleArray([0, 1, 2]), shuffleArray([0, 1, 2]), shuffleArray([0, 1, 2])];
+          const stackOrder = shuffleArray([0, 1, 2]);
+          const colOrders = [shuffleArray([0, 1, 2]), shuffleArray([0, 1, 2]), shuffleArray([0, 1, 2])];
+
+          const finalBoard = new Array(81);
+          for (let r = 0; r < 9; r++) {
+            for (let c = 0; c < 9; c++) {
+              const band = Math.floor(r / 3);
+              const rowInBand = r % 3;
+              const mappedRow = bandOrder[band] * 3 + rowOrders[band][rowInBand];
+
+              const stack = Math.floor(c / 3);
+              const colInStack = c % 3;
+              const mappedCol = stackOrder[stack] * 3 + colOrders[stack][colInStack];
+
+              finalBoard[r * 9 + c] = board[mappedRow * 9 + mappedCol];
+            }
+          }
+
+          const difficulties = { 1: 30, 2: 40, 3: 50, 4: 58, 5: 64 };
+          let holesToMake = difficulties[level] || 45;
+          const puzzle = [...finalBoard];
+          let attempts = 0;
+          
+          while (holesToMake > 0 && attempts < 200) {
+            let idx = Math.floor(Math.random() * 81);
+            let symIdx = 80 - idx;
+            if (puzzle[idx] !== null) {
+              puzzle[idx] = null;
+              puzzle[symIdx] = null;
+              holesToMake -= (idx === symIdx ? 1 : 2);
+            }
+            attempts++;
+          }
+
+          return puzzle.map(val => ({ value: val, isGiven: val !== null, isError: false }));
+        }
+
+        function checkConflicts(cells) {
+          const newCells = cells.map(cell => ({ ...cell, isError: false }));
+          let hasError = false;
+
+          for (let i = 0; i < 81; i++) {
+            const val = newCells[i].value;
+            if (!val) continue;
+
+            const r = Math.floor(i / 9);
+            const c = i % 9;
+            const b = Math.floor(r / 3) * 3 + Math.floor(c / 3);
+
+            for (let j = 0; j < 81; j++) {
+              if (i === j) continue;
+              if (newCells[j].value === val) {
+                const jr = Math.floor(j / 9);
+                const jc = j % 9;
+                const jb = Math.floor(jr / 3) * 3 + Math.floor(jc / 3);
+                if (r === jr || c === jc || b === jb) {
+                  newCells[i].isError = true;
+                  newCells[j].isError = true;
+                  hasError = true;
+                }
+              }
+            }
+          }
+          return { newCells, hasError };
+        }
+
+        // --- メインアプリ ---
+        function App() {
+          const [cells, setCells] = useState(Array(81).fill({ value: null, isGiven: false, isError: false }));
+          const [selectedIdx, setSelectedIdx] = useState(null);
+          const [level, setLevel] = useState(3);
+          const [time, setTime] = useState(0);
+          const [isPlaying, setIsPlaying] = useState(false);
+          const [isPaused, setIsPaused] = useState(false);
+          const [isWon, setIsWon] = useState(false);
+          const [isStarted, setIsStarted] = useState(false);
+          const [bestTimes, setBestTimes] = useState({});
+          const [isNewRecord, setIsNewRecord] = useState(false);
+
+          const startNewGame = useCallback((selectedLevel = level, autoStart = false) => {
+            const newBoard = generateSudoku(selectedLevel);
+            setCells(newBoard);
+            setSelectedIdx(null);
+            setTime(0);
+            setIsPlaying(autoStart);
+            setIsPaused(false);
+            setIsWon(false);
+            setIsNewRecord(false);
+            setIsStarted(autoStart);
+          }, [level]);
+
+          useEffect(() => {
+            startNewGame(level, false);
+          }, []);
+
+          useEffect(() => {
+            let timer;
+            if (isStarted && isPlaying && !isWon && !isPaused) {
+              timer = setInterval(() => setTime(t => t + 1), 1000);
+            }
+            return () => clearInterval(timer);
+          }, [isStarted, isPlaying, isWon, isPaused]);
+
+          useEffect(() => {
+            if (isWon) {
+              setBestTimes(prev => {
+                const currentBest = prev[level];
+                if (currentBest === undefined || time < currentBest) {
+                  setIsNewRecord(true);
+                  return { ...prev, [level]: time };
+                }
+                return prev;
+              });
+            }
+          }, [isWon, level, time]);
+
+          const togglePause = () => {
+            if (isStarted && isPlaying && !isWon) {
+              setIsPaused(!isPaused);
+            }
+          };
+
+          const handleInput = useCallback((num) => {
+            if (selectedIdx === null || cells[selectedIdx].isGiven || isWon || isPaused || !isStarted) return;
+
+            setCells(prevCells => {
+              const newCells = [...prevCells];
+              newCells[selectedIdx] = { ...newCells[selectedIdx], value: num };
+              
+              const { newCells: validatedCells, hasError } = checkConflicts(newCells);
+              
+              const isBoardFull = validatedCells.every(c => c.value !== null);
+              if (isBoardFull && !hasError) setIsWon(true);
+              
+              return validatedCells;
+            });
+          }, [selectedIdx, cells, isWon, isPaused, isStarted]);
+
+          useEffect(() => {
+            const handleKeyDown = (e) => {
+              if (!isStarted || isPaused) return;
+
+              if (e.key >= '1' && e.key <= '9') handleInput(parseInt(e.key));
+              else if (e.key === 'Backspace' || e.key === 'Delete') handleInput(null);
+              else if (e.key.startsWith('Arrow') && selectedIdx !== null) {
+                e.preventDefault();
+                let newIdx = selectedIdx;
+                if (e.key === 'ArrowUp' && selectedIdx >= 9) newIdx -= 9;
+                if (e.key === 'ArrowDown' && selectedIdx <= 71) newIdx += 9;
+                if (e.key === 'ArrowLeft' && selectedIdx % 9 !== 0) newIdx -= 1;
+                if (e.key === 'ArrowRight' && selectedIdx % 9 !== 8) newIdx += 1;
+                setSelectedIdx(newIdx);
+              }
+            };
+            window.addEventListener('keydown', handleKeyDown);
+            return () => window.removeEventListener('keydown', handleKeyDown);
+          }, [handleInput, selectedIdx, isPaused, isStarted]);
+
+          const formatTime = (seconds) => {
+            const m = Math.floor(seconds / 60).toString().padStart(2, '0');
+            const s = (seconds % 60).toString().padStart(2, '0');
+            return `${m}:${s}`;
+          };
+
+          const getCellBgColor = (index, cell) => {
+            if (selectedIdx === index) return 'bg-blue-300';
+            if (cell.isError) return 'bg-red-200';
+            if (selectedIdx !== null && cells[selectedIdx].value && cell.value === cells[selectedIdx].value) return 'bg-blue-100';
+            if (selectedIdx !== null) {
+              const r1 = Math.floor(index / 9), c1 = index % 9, b1 = Math.floor(r1 / 3) * 3 + Math.floor(c1 / 3);
+              const r2 = Math.floor(selectedIdx / 9), c2 = selectedIdx % 9, b2 = Math.floor(r2 / 3) * 3 + Math.floor(c2 / 3);
+              if (r1 === r2 || c1 === c2 || b1 === b2) return 'bg-gray-100';
+            }
+            return 'bg-white';
+          };
+
+          return (
+            <div className="min-h-screen bg-gray-50 flex flex-col items-center py-4 px-4 font-sans select-none overflow-y-auto">
+              <div className="w-full max-w-md bg-white p-4 sm:p-6 rounded-2xl shadow-xl">
+                
+                <AdBanner />
+
+                <div className="flex justify-between items-center mb-6">
+                  <h1 className="text-xl sm:text-2xl font-bold text-gray-800 tracking-wider">ナンプレ</h1>
+                  <div className="flex flex-col items-end">
+                    <div className="flex items-center bg-gray-100 px-2 py-1 sm:px-3 sm:py-1.5 rounded-lg border border-gray-200">
+                      <button 
+                        onClick={togglePause}
+                        disabled={!isStarted || isWon}
+                        className={`p-1 rounded-md transition-colors mr-2 ${
+                          (!isStarted || isWon) ? 'text-gray-300' : 'text-gray-900 hover:bg-gray-200 active:bg-gray-300'
+                        }`}
+                        title={isPaused ? "再開" : "一時停止"}
+                      >
+                        {isPaused ? <Play size={18} fill="currentColor" /> : <Pause size={18} fill="currentColor" />}
+                      </button>
+                      <span className="text-gray-600 font-mono text-base sm:text-lg min-w-[3rem] text-right font-medium">
+                        {formatTime(time)}
+                      </span>
+                    </div>
+                    {bestTimes[level] !== undefined && (
+                      <div className="text-xs sm:text-sm text-gray-600 mt-1 flex items-center bg-yellow-50 px-2 py-0.5 rounded-md border border-yellow-200">
+                        <Trophy size={12} className="mr-1 text-yellow-500" />
+                        ベスト: {formatTime(bestTimes[level])}
+                      </div>
+                    )}
+                  </div>
+                </div>
+
+                <div className="flex justify-between items-center mb-6 gap-2">
+                  <select 
+                    value={level}
+                    onChange={(e) => {
+                      const newLevel = parseInt(e.target.value);
+                      setLevel(newLevel);
+                      startNewGame(newLevel, false); 
+                    }}
+                    disabled={isPaused}
+                    className="flex-1 bg-gray-100 border-none text-gray-700 py-2 px-2 sm:px-4 rounded-xl focus:ring-2 focus:ring-blue-400 outline-none cursor-pointer appearance-none text-center font-medium text-sm sm:text-base disabled:opacity-50"
+                  >
+                    <option value={1}>レベル 1 (入門)</option>
+                    <option value={2}>レベル 2 (初級)</option>
+                    <option value={3}>レベル 3 (中級)</option>
+                    <option value={4}>レベル 4 (上級)</option>
+                    <option value={5}>レベル 5 (達人)</option>
+                  </select>
+
+                  <button 
+                    onClick={() => startNewGame(level, false)}
+                    disabled={isPaused}
+                    className="flex items-center justify-center space-x-1 bg-blue-500 hover:bg-blue-600 text-white py-2 px-3 sm:px-4 rounded-xl transition-colors font-medium active:scale-95 text-sm sm:text-base disabled:opacity-50 disabled:active:scale-100"
+                  >
+                    <RefreshCw size={16} className="sm:w-[18px] sm:h-[18px]" />
+                    <span>リセット</span>
+                  </button>
+                </div>
+
+                <div className="relative mb-6">
+                  <div className="grid grid-cols-9 bg-gray-800 border-4 border-gray-800 aspect-square rounded-sm overflow-hidden gap-[1px]">
+                    {cells.map((cell, index) => {
+                      const row = Math.floor(index / 9);
+                      const col = index % 9;
+                      let borderClasses = "";
+                      if (row % 3 === 2 && row !== 8) borderClasses += " mb-[2px]";
+                      if (col % 3 === 2 && col !== 8) borderClasses += " mr-[2px]";
+
+                      return (
+                        <div
+                          key={index}
+                          onClick={() => isStarted && !isPaused && setSelectedIdx(index)}
+                          className={`
+                            flex items-center justify-center text-lg sm:text-2xl cursor-pointer
+                            ${getCellBgColor(index, cell)}
+                            ${cell.isGiven ? 'text-gray-900 font-bold' : 'text-blue-600 font-medium'}
+                            ${cell.isError ? 'text-red-600 font-bold' : ''}
+                            ${borderClasses}
+                          `}
+                          style={{ touchAction: 'manipulation' }}
+                        >
+                          {cell.value || ''}
+                        </div>
+                      );
+                    })}
+                  </div>
+
+                  {!isStarted && (
+                    <div className="absolute inset-0 bg-white/90 backdrop-blur-sm flex flex-col items-center justify-center rounded-sm z-30 animate-in fade-in duration-200">
+                      <Play className="text-blue-500 w-12 h-12 sm:w-16 sm:h-16 mb-4" />
+                      <h2 className="text-xl sm:text-2xl font-bold text-gray-800 mb-6">ゲームスタート</h2>
+                      <button 
+                        onClick={() => {
+                          setIsStarted(true);
+                          setIsPlaying(true);
+                        }}
+                        className="flex items-center space-x-2 bg-blue-500 hover:bg-blue-600 text-white font-bold py-3 px-8 rounded-full shadow-lg transform transition active:scale-95"
+                      >
+                        <Play size={20} fill="currentColor" />
+                        <span>はじめる</span>
+                      </button>
+                    </div>
+                  )}
+
+                  {isStarted && isPaused && !isWon && (
+                    <div className="absolute inset-0 bg-white/90 backdrop-blur-sm flex flex-col items-center justify-center rounded-sm z-10 animate-in fade-in duration-200">
+                      <Pause className="text-blue-400 w-12 h-12 sm:w-16 sm:h-16 mb-4" />
+                      <h2 className="text-xl sm:text-2xl font-bold text-gray-800 mb-6">一時停止中</h2>
+                      <button 
+                        onClick={togglePause}
+                        className="flex items-center space-x-2 bg-blue-500 hover:bg-blue-600 text-white font-bold py-3 px-8 rounded-full shadow-lg transform transition active:scale-95"
+                      >
+                        <Play size={20} fill="currentColor" />
+                        <span>再開する</span>
+                      </button>
+                    </div>
+                  )}
+
+                  {isStarted && isWon && (
+                    <div className="absolute inset-0 bg-white/90 backdrop-blur-sm flex flex-col items-center justify-center rounded-sm z-20 animate-in fade-in duration-500">
+                      <Trophy className="text-yellow-500 w-12 h-12 sm:w-16 sm:h-16 mb-2 animate-bounce" />
+                      <h2 className="text-xl sm:text-2xl font-bold text-gray-800 mb-1">クリア！</h2>
+                      {isNewRecord && (
+                        <div className="text-red-500 font-bold text-sm sm:text-base mb-2 animate-pulse flex items-center">
+                          ✨ 新記録達成！ ✨
+                        </div>
+                      )}
+                      <p className="text-gray-600 mb-6 font-mono text-base sm:text-lg">タイム: {formatTime(time)}</p>
+                      <button 
+                        onClick={() => startNewGame(level, false)}
+                        className="bg-blue-500 hover:bg-blue-600 text-white font-bold py-2 px-6 sm:py-3 sm:px-8 rounded-full shadow-lg transform transition active:scale-95"
+                      >
+                        もう一度遊ぶ
+                      </button>
+                    </div>
+                  )}
+                </div>
+
+                <div className="grid grid-cols-5 gap-2">
+                  {[1, 2, 3, 4, 5, 6, 7, 8, 9].map((num) => (
+                    <button
+                      key={num}
+                      onClick={() => handleInput(num)}
+                      disabled={!isStarted || isPaused}
+                      className="bg-gray-100 hover:bg-gray-200 text-gray-800 text-xl sm:text-2xl font-medium py-2 sm:py-3 rounded-xl transition-colors active:bg-gray-300 flex items-center justify-center shadow-sm touch-manipulation disabled:opacity-50 disabled:active:bg-gray-100"
+                    >
+                      {num}
+                    </button>
+                  ))}
+                  <button
+                    onClick={() => handleInput(null)}
+                    disabled={!isStarted || isPaused}
+                    className="bg-red-50 hover:bg-red-100 text-red-500 text-lg sm:text-xl font-medium py-2 sm:py-3 rounded-xl transition-colors active:bg-red-200 flex items-center justify-center shadow-sm touch-manipulation disabled:opacity-50 disabled:active:bg-red-50"
+                  >
+                    <Eraser size={20} className="sm:w-[24px] sm:h-[24px]" />
+                  </button>
+                </div>
+              </div>
+              <p className="mt-6 text-gray-400 text-xs sm:text-sm text-center">
+                操作方法: マスをタップしてから、下の数字ボタンで入力します。<br/>
+                (PCの場合はキーボードの数字キーや矢印キーも使えます)
+              </p>
+            </div>
+          );
+        }
+
+        // --- 画面への描画処理 ---
+        const root = ReactDOM.createRoot(document.getElementById('root'));
+        root.render(<App />);
+    </script>
+</body>
+</html>
